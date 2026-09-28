@@ -1,0 +1,39 @@
+{
+  "game_root": "C:/Program Files (x86)/Steam/steamapps/common/War Thunder",
+  "launcher": {
+    "x_m": 0,
+    "z_m": 0,
+    "altitude_m": 5000,
+    "speed_kmh": 1500,
+    "heading_deg": 0
+  },
+  "target": {
+    "x_m": 50000,
+    "z_m": 0,
+    "altitude_m": 5000,
+    "speed_kmh": 700,
+    "heading_deg": 0,
+    "aircraft": "f_16c_block_50"
+  },
+  "flight_model": "j_16",
+  "missiles": [
+    "cn_pl12a",
+    "us_aim_120a",
+    "su_r_77_1",
+    "cn_pl12",
+    "jp_aam4",
+    "us_aim_120d",
+    "su_r_77",
+    "su_r_27er1"
+  ],
+  "release_mode": "salvo",
+  "fixed_motion": true,
+  "correction_interval_s": 0.05,
+  "immortal_target": true,
+  "zero_warmup": true,
+  "level": "levels/water.bin",
+  "ignore_projectile_fuses": true,
+  "isolate_missile_damage": true,
+  "radar": "j16_tws_150",
+  "setup_delay_s": 5
+}

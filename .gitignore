@@ -1,0 +1,11 @@
+__pycache__/
+build/
+backups/
+telemetry/
+reference/
+scenario.json
+.venv/
+.env
+.env.*
+!.env.example
+*.log

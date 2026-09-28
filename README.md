@@ -1,104 +1,111 @@
-# Missile Lab
+# War Thunder Missile Lab
 
-A configurable local War Thunder user mission with a player-controlled custom launcher and an AI target. The launcher uses the CDK's compiled I-185 sample body, selectable flight dynamics (J-16 by default), and a separate radar preset (J-16 KLJ-16 by default). No external mod or Blender installation is needed.
+Set up a single-player missile test with your own launcher aircraft and an AI target. Choose up to eight air-to-air missiles and set each aircraft's starting position, altitude, speed and heading.
 
-**Status: prototype runs in-game according to user testing.** The speed scaling bug has been corrected. The first proximity-only fix did not resolve the user-reported missile detonations; the revised isolation option also disables projectile collision and missile damage reactions. The new radar preset, isolation and setup countdown require an in-game retest. Normal grouped AAM firing released only two missiles in the user test. An experimental CDK release-all mode has now been added; all-missile launch, retained guidance and same-frame timing remain unverified. Precise motion stability also remains unverified. The ocean map is used for now; a void level is deferred.
+The launcher uses the I-185 sample aircraft's **visible model**, with **J-16 flight dynamics** and a **J-16 KLJ-16 radar preset** by default. Changing its flight-model setting does not change its appearance. The mission takes place over an ocean; a terrain-free void is not included.
 
-## Requirements
+**Experimental:** exact simultaneous missile release, missile isolation, radar startup settings and precise motion holding have not been fully verified in-game. Legacy grouped release has only launched two missiles in testing. Release all does not yet guarantee that every selected missile launches and retains guidance.
 
-- Windows with War Thunder and the War Thunder CDK sample aircraft installed into the same game folder.
-- Python 3.10 or newer with Tkinter (included in the standard Windows installer). No pip packages are required.
+## Install
 
-## Use
+You need Windows, War Thunder, the War Thunder CDK, and Python 3.10 or newer with Tkinter. You do not need to edit code or use the CDK editor.
 
-Download this repository as a ZIP and extract it, or clone it with Git. Generated game files are built locally; game assets are not included in this repository.
+1. Install the [War Thunder CDK](https://wiki.warthunder.com/war_thunder_cdk) into your War Thunder game folder. Missile Lab needs its sample aircraft files.
+2. If needed, install [Python for Windows](https://www.python.org/downloads/windows/) with Tcl/Tk support. An existing Anaconda installation also works.
+3. On this GitHub page, select **Code → Download ZIP**. Right-click the downloaded ZIP, choose **Extract All**, and open the extracted folder.
+4. Double-click **Open Missile Lab.cmd**.
+5. Next to **War Thunder folder**, click **Browse**. Select the game folder containing `aces.vromfs.bin`, not its `WarThunderCDK` subfolder.
+6. Configure your test in the three tabs, then click **Build & install mission**. Wait for the **Installed … files** message.
 
-1. Open **Open Missile Lab.cmd** in this folder. It detects the Windows Python launcher, Anaconda, or Python on PATH. You can also run `python configurator.py`, or set `MISSILE_LAB_PYTHON` to a specific `python.exe`. On first use, browse to your War Thunder game folder (the folder containing `aces.vromfs.bin`, not the `WarThunderCDK` subfolder).
-2. Set the launcher and target's X, Z, altitude, speed, and heading. Set the target's internal aircraft ID if desired.
-3. Select up to eight missiles in the Missiles tab. Duplicate IDs are allowed. The list contains 102 AAM definitions checked against the public data snapshot; availability and compatibility still depend on your game version. You can also type another installed rocketGun ID.
-4. Choose **Build & install mission**. This saves `scenario.json` and installs the generated files.
-5. Start/restart War Thunder. Open **Battles → User Missions → Missile Lab - Launcher and Target**.
-6. Use the initial five-second **RADAR SETUP** countdown to adjust the radar and designate the target. Both aircraft are held at their start positions, then released automatically. Acquire the target, activate the seeker with **Weapon lock (air-to-air)**, then, in the new **Release all (experimental)** mode, press **Fire rocket salvo** once. Bind that action in Controls → Aircraft → Weaponry if it has no key. Use a different key from **Fire air-to-air missile**; pressing the normal AAM control still uses the ordinary pair/individual release path. The release-all control is enabled after the setup countdown. For Individual/legacy Grouped mode, use **Fire air-to-air missile**. Radar-guided missiles additionally need appropriate target designation; SARH missiles need continued radar support.
-7. Restart the mission for a fresh run. Rebuild and restart the game after changing aircraft/weapon definitions, which may be cached.
+**Save scenario** only saves your choices. **Build & install mission** saves them and applies them to the game. No manual copying of mission files is needed.
 
-The included example starts with a tail chase. `scenario.example.json` supplies first-run defaults; saving from the configurator creates your local `scenario.json`, which Git ignores. The target is invulnerable by default so the first hit should not end later missiles' tests. The two isolation options below address projectile proximity fusing and projectile damage separately; neither fix is yet confirmed in-game.
+## Start a test
 
-## Coordinates and fixed motion
+1. Fully quit and reopen War Thunder after installing or changing the aircraft, radar or missile settings.
+2. From the hangar, open **Battles → User Missions → Missile Lab - Launcher and Target**. Use the hangar menu rather than the battle-mode selection panel beneath the battle button.
+3. During the **RADAR SETUP** countdown, adjust the radar and acquire the target. The default hold lasts five seconds and ends automatically, whether or not you have a lock. You can keep adjusting the radar afterward.
+4. Activate the seeker with **Weapon lock (air-to-air)**, then use the firing control for your selected mode below.
+5. Restart the mission to restore starting positions and reload the missiles.
 
-- X and Z are horizontal world coordinates in metres; altitude is Y, metres above sea level.
-- Heading is defined as 0° along +X, 90° along +Z, 180° along −X, and 270° along −Z. This is a CDK coordinate convention, not a promise of matching the cockpit compass.
-- Speed inputs and the generated teleport velocity are both in km/h. The previous division by 3.6 produced 417 for a requested 1500; that conversion has been removed for both launcher and target. Check against TAS rather than IAS.
-- Both aircraft start with level pitch and roll.
+Find and bind these controls under **Controls → Aircraft**. Their keys depend on your control profile.
 
-**Fixed motion is an experimental correction loop.** Every 0.05 seconds by default, `unitMoveTo` teleports each aircraft to its own current horizontal position, restores the chosen altitude, points it toward a distant marker on its prescribed heading, and resets its velocity. The target also receives `lockSpeed` and a straight flight command. The player's flight axes are disabled while weapon, radar and camera controls remain available.
+| Mode in the Missiles tab | Firing control | Behavior |
+| --- | --- | --- |
+| **Individual release** | **Fire air-to-air missile** | Test missiles separately. Start here to check locking and guidance. |
+| **Release all (experimental)** | **Fire rocket salvo** | Attempts to release the entire loadout. Available after the countdown, once per mission run. Missile count, guidance and exact release timing remain unverified. |
+| **Legacy grouped (pair observed)** | **Fire air-to-air missile** | Earlier grouped method; only two missiles launched in testing. |
 
-This does not continuously integrate an exact prescribed trajectory. Departures between corrections, frame scheduling, or engine teleport behavior can affect speed, heading, and radar tracking. The heading marker is finite (1,000 km ahead); restart before passing it. Do not treat this prototype as an exact kinematic test fixture before validating these effects. Turn fixed motion off to diagnose whether corrections interfere with guidance.
+For a first test, select only `us_aim_120a` and **Individual release**. Once that works, add other missiles or try Release all.
 
-## Missile release
+For Release all, give **Fire rocket salvo** a different key from **Fire air-to-air missile**. **Release-all command sent** confirms your input was received, not that every missile launched. Check the missiles themselves, not just the ammunition counter.
 
-**Release all (experimental)** uses a one-shot mission trigger watching **Fire rocket salvo** (`ID_ROCKETS_SERIES`). It calls `unitDropAmmo` once for the launcher, rather than repeatedly pressing the ordinary AAM-fire control. The installed CDK schema and [official trigger reference](https://wiki.warthunder.com/cdk/7436-cdk-mission-editor-triggers) document this action as releasing bombs/rockets and emptying ammunition. The launcher carries only the selected missiles.
+Radar-guided missiles need suitable target tracking. Semi-active radar missiles, including the example loadout's `su_r_27er1`, need continued radar illumination: use a radar target lock rather than relying on TWS alone. Infrared missiles need their own seeker lock. Mixed guidance types may not all be ready together.
 
-This is a diagnostic implementation, not a confirmed simultaneous guided-missile salvo: the documentation does not establish mixed-AAM guidance retention or engine scheduling. After locking and activating the seeker, press Fire rocket salvo. A **Release-all command sent** hint confirms that the mission received the input; it does not prove the engine launched eight guided missiles. Check that every missile leaves its station and guides toward the target. If ammunition simply disappears, missiles drop unguided, or fewer launch, report that outcome. Restart the mission to reload and rearm this one-shot trigger.
+## Configure your test
 
-Legacy grouped mode assigns the same order to all rocket emitters and disables separate release; **the user observed only two missiles launching**, so it is no longer presented as an all-missile launch solution. Individual mode is retained for checking each missile independently. One missile is assigned per occupied emitter. No missile propulsion, guidance, or ignition-delay parameters are changed by selecting the release-all mode.
+### Launcher & target
 
-The preset uses local wrappers around the installed game's missile definitions. **Ignore projectiles in missile proximity fuses** is enabled by default and overrides only `rocket/proximityFuse/detectShells` to `no`. This targets premature detonation from nearby missiles and shells while retaining the inherited aircraft proximity fuse, its radius, and its arming delay. It does not distinguish friendly from enemy projectiles. The separate **Isolate missiles from projectile collisions and damage reactions** option now defaults on. It sets `shellCollision=no` and replaces the missile `DamageEffects` block with an empty block, removing stock in-flight hit/explosion and kill/destruction reactions. This also changes damage behavior of the missiles while carried; use these options for comparative flight tests, not stock missile vulnerability tests. Aircraft proximity fuses, warhead strength, propulsion and guidance remain inherited. Runtime effectiveness still needs retesting.
+Set each aircraft independently. The launcher is the aircraft you control; the target is the AI aircraft.
 
-Optional zero warm-up also overrides `rocket/guidance/warmUpTime` to zero. The options work independently or together. Propulsion, drag and in-flight guidance are inherited unchanged. With all three missile override options off, the preset references stock definitions directly. Restart the configurator after a code update and restart War Thunder to reload changed missile definitions.
+| Setting | Meaning |
+| --- | --- |
+| **X / Z position** | Horizontal map coordinates in metres, from −200,000 to +200,000. These are not latitude and longitude. |
+| **Altitude** | Metres above sea level, from 50 to 40,000. |
+| **Speed** | True airspeed in km/h, from 0 to 5,000. Compare against **TAS**, not indicated airspeed (**IAS**). Accepted values do not guarantee stable flight. |
+| **Heading** | 0° = +X, 90° = +Z, 180° = −X, 270° = −Z. These mission directions may differ from the cockpit compass. |
+| **Aircraft internal ID** | Target identifier, such as `f_16c_block_50`. Use the internal ID, not its display name. |
 
-The default **j16_tws_150** radar preset includes the installed KLJ-16 definition, requests enabled TWS at startup, makes 150 km the first scope range, and makes the stock narrow TWS scan (30° azimuth × 15° elevation) the first scan pattern. Other stock ranges and scan modes remain selectable. This is the display range, not a promise of detecting every target at 150 km. The previous APG-68 preset remains selectable. Radar and flight-model selectors are independent and explicitly labeled.
+Click **Calculate initial separation** after editing positions. Both aircraft start level.
 
-The default five-second setup hold uses repeated position/orientation corrections every 0.02 s so the radar simulation and controls can continue running. Configured velocity is retained for Doppler calculations. Small movement between corrections is possible; this is not a global physics pause. Motion starts at countdown expiry. With fixed motion off, flight controls are restored then. Set the setup hold to 0 to disable it (maximum 30 s).
+The first-run example places the target **50 km ahead**, flying in the same direction. Both start at **5,000 m**; the launcher starts at **1,500 km/h TAS**, the target at **700 km/h TAS**.
 
-Changing the launcher flight-model ID changes dynamics, not the visible I-185 body. An arbitrary stock aircraft's complete appearance/avionics is not implemented. The target aircraft ID is independently configurable. There is no custom cockpit.
+### Missiles
 
-## Files and installation
+Select one missile per station, using between one and eight stations. Leave unused stations blank. Repeat an ID to carry multiple missiles of that type.
 
-Select the game root in the configurator. Only project-named files are installed underneath it:
+The list uses internal IDs such as `us_aim_120a` and `cn_pl12a`. Availability depends on your game version. You may type another installed missile ID without `.blk`, but the configurator cannot confirm that an unfamiliar ID exists in the game.
 
-```text
-UserMissions/wt_missile_lab.blk
-UserMissions/usr_wt_missile_lab.csv
-content/pkg_local/gameData/flightModels/wt_missile_lab_launcher.blk
-content/pkg_local/gameData/flightModels/weaponPresets/wt_missile_lab_loadout.blk
-content/pkg_local/gameData/weapons/rocketGuns/wt_missile_lab_*.blk  [test wrappers]
-content/pkg_local/gameData/sensors/wt_missile_lab_j16_tws_150.blk
-```
+### Motion & setup
 
-The original CDK files, game archives, and global control configuration are not overwritten. Existing project-named files are backed up under `backups/` before replacement. `build/manifest.json` lists the latest build. The project depends on the model/resources supplied with the CDK.
+| Setting | What it does |
+| --- | --- |
+| **Hold both aircraft at the configured speed, altitude and heading** | Repeatedly corrects motion. Flight controls are disabled; radar, weapon and camera controls stay available. Small deviations and tracking disturbances are possible. |
+| **Correction interval** | Time between corrections: 0.02–1 second; default 0.05. A shorter interval does not guarantee greater accuracy. |
+| **Radar setup hold** | Holds aircraft near their starting positions for 0–30 whole seconds; default 5. Enter 0 to skip it. The simulation continues running, so this is not an exact pause. |
+| **Make target invulnerable** | Requests an invulnerable target so the first hit does not end the encounter. On by default. |
+| **Ignore projectiles in missile proximity fuses** | Disables proximity detection of missiles and shells while retaining aircraft detection. On by default; this option alone did not resolve the reported detonations. |
+| **Isolate missiles from projectile collisions and damage reactions** | Also disables projectile collisions and missile damage reactions. On by default; effectiveness is unverified. Changes missile vulnerability, including while carried. |
+| **Set missile warm-up time to zero** | Removes seeker warm-up time, not the need for a valid lock. On by default. |
+| **Launcher flight-model ID** | Selects flight dynamics; default `j_16`. Changes neither appearance nor radar selection. |
+| **Launcher radar preset** | `j16_tws_150` requests KLJ-16 startup in **TWS, 150 km, 30° × 15°**. `apg68` selects the alternative APG-68 radar. |
 
-After saving your game folder and scenario in the configurator, command-line equivalents:
+The radar's **150 km** setting is its display scale, not a guaranteed detection distance. Confirm its actual mode, range and scan size in-game before each comparison.
 
-```powershell
-python missile_lab.py --install
-python -m unittest -v test_missile_lab
-python record_telemetry.py --seconds 20
-```
+With motion holding off, flight controls become available when the countdown ends. If radar tracking is unstable, turn motion holding off to check whether corrections are interfering.
 
-The recorder reads only `127.0.0.1:8111`, saves raw samples under `telemetry/`, and reports launcher TAS/altitude variation when valid flight data is available. It does not measure missile release timing.
+The missile options leave propulsion, drag and in-flight guidance parameters unchanged. They change launch preparation and damage interactions. Turn all three missile override options off to use stock missile definitions.
 
-## Verification still needed
+## Troubleshooting
 
-1. Mission loads into the launcher with selected missiles and a visible target.
-2. Starting positions/directions match; launcher TAS matches the requested value. Compare target motion independently.
-3. Speed, altitude and heading remain stable, including after missile release.
-4. One IR missile locks and guides, followed by a grouped IR pair.
-5. Radar missiles work individually before testing mixed guidance types.
-6. Check release frames in a replay before calling the group simultaneous.
+| Problem | What to check |
+| --- | --- |
+| **Python is not recognized / configurator will not open** | Extract the ZIP and use **Open Missile Lab.cmd**. If it reports missing Python, install Python 3.10 or newer with Tcl/Tk support. |
+| **Required installed CDK/game file missing** | Select the folder containing `aces.vromfs.bin` and install the CDK there. Missing `sample_i_185_m82.blk` or `sample_i_185.grp` means the required sample aircraft is unavailable. |
+| **Mission is missing** | Confirm installation succeeded and you selected the game installation you actually launch. Restart War Thunder. |
+| **Only two missiles launch** | Select **Release all (experimental)**, click **Build & install mission**, and use **Fire rocket salvo**. The normal AAM-fire control still uses ordinary release behavior. |
+| **Release all does nothing** | Wait until the countdown ends and check the **Fire rocket salvo** binding. Restart the mission if you already used it. Look for **Release-all command sent**. |
+| **Ammunition disappears, missiles do not guide, or fewer launch** | Release all is unverified for that loadout. Use Individual release to check each missile and its guidance requirements. |
+| **Missiles still detonate near one another** | Enable both isolation options, click **Build & install mission**, and fully restart the game. Isolation remains unverified; successful installation does not prove it works. |
+| **Speed looks wrong** | Compare km/h **TAS** with the setting. IAS can differ. With motion holding off, normal acceleration and deceleration apply. |
+| **Aircraft still looks like an I-185 / radar did not change with the aircraft ID** | The I-185 body is expected. Choose the radar separately, click **Build & install mission**, and restart the game. |
+| **New settings did not take effect** | Click **Build & install mission**, not just **Save scenario**, and fully restart War Thunder. |
 
-## Implementation references
+## Save settings and update
 
-The installed CDK samples and `unitMoveTo`, `unitSetProperties`, `playerControls`, and `periodicEvent` schemas supply mission syntax. The sample aircraft supplies the compiled model, eight rocket emitters, and base definition.
+Your settings are saved in `scenario.json` inside the Missile Lab folder. Keep a copy to preserve your test setup.
 
-- [Custom units creation](https://wiki.warthunder.com/cdk/1212-custom-units-creation)
-- [Aircraft model integration](https://wiki.warthunder.com/cdk/233-checking-3d-model-of-the-aircraft-in-game)
-- [CDK trigger reference](https://old-wiki.warthunder.com/Triggers)
-- [Public game-data snapshot](https://github.com/gszabi99/War-Thunder-Datamine/tree/master/aces.vromfs.bin_u/gamedata): used to identify missile IDs, AAM type, sensor paths, and weapon-station fields. Runtime missile physics comes from the installed game, not this snapshot.
+To update, close the configurator, download and extract the new ZIP, then copy your existing `scenario.json` into the new folder. Open the new **Open Missile Lab.cmd**, click **Build & install mission**, and restart War Thunder.
 
-Latest regression checks cover radar wiring, scan/range defaults, collision/damage isolation, preserved missile physics, and countdown release with fixed motion both on and off. These checks verify generated files, not engine behavior. Fully quit and relaunch War Thunder after installing this update; restarting only the mission may retain cached definitions.
+Missile Lab installs its own mission and custom aircraft files. It backs up previous Missile Lab files in its local `backups` folder before replacement. Stock game archives and global control bindings are not changed.
 
-## Development
-
-Run `python -m unittest -v test_missile_lab`. The tests use a small synthetic sample definition and require no game installation. GitHub Actions runs them on Windows and Linux. A passing test suite validates the generator, not the in-game behavior described above.
-
-`scenario.json`, `build/`, `backups/`, `telemetry/`, and research downloads under `reference/` stay local and are ignored by Git. Keep game assets out of commits. This is an unofficial community project and is not affiliated with Gaijin Entertainment.
+This is an unofficial community project, not affiliated with Gaijin Entertainment.

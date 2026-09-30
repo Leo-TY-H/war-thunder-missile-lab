@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import csv
 import datetime as dt
 import json
 import math
@@ -76,6 +77,7 @@ def validate(config):
     c.setdefault("flight_model", "j_16")
     c.setdefault("radar", "j16_tws_150")
     c.setdefault("setup_delay_s", 5)
+    c.setdefault("motion_duration_s", 120)
     if isinstance(c['setup_delay_s'], bool) or c['setup_delay_s'] != int(number(c['setup_delay_s'])) or not 0 <= number(c['setup_delay_s']) <= 30:
         raise ValueError("Setup countdown must be a whole number from 0 to 30 seconds.")
     c['setup_delay_s'] = int(c['setup_delay_s'])
@@ -110,6 +112,15 @@ def validate(config):
     c["correction_interval_s"] = number(c["correction_interval_s"])
     if not 0.02 <= c["correction_interval_s"] <= 1:
         raise ValueError("Motion correction interval must be 0.02–1 seconds.")
+    # Mission timeExpires is specified to two decimal places. Avoid schedules
+    # whose apparent precision cannot be represented by the mission clock.
+    if abs(c['correction_interval_s'] * 100 - round(c['correction_interval_s'] * 100)) > 1e-8:
+        raise ValueError("Trajectory interval must use whole hundredths of a second (for example 0.02 or 0.05).")
+    c['motion_duration_s'] = number(c['motion_duration_s'])
+    if not 1 <= c['motion_duration_s'] <= 600 or c['motion_duration_s'] != int(c['motion_duration_s']):
+        raise ValueError("Prescribed motion duration must be a whole number from 1 to 600 seconds.")
+    if c['fixed_motion'] and math.ceil(c['motion_duration_s'] / c['correction_interval_s']) > 12000:
+        raise ValueError("Trajectory exceeds 12,000 updates. Increase the interval or shorten the duration.")
     if not re.fullmatch(r"levels/[A-Za-z0-9_-]+\.bin", c["level"]):
         raise ValueError("Level must be a simple levels/name.bin path.")
     return c
@@ -147,11 +158,33 @@ def area(name, state, ahead=0):
   }}'''
 
 
-def teleport(name, state, initial=False):
+def position_at(state, elapsed_s):
+    """Absolute world position after elapsed flight time, independent of physics drift."""
+    result = dict(state)
+    dx, dz = direction(state['heading_deg'])
+    distance = state['speed_kmh'] / 3.6 * elapsed_s
+    result['x_m'] += distance * dx
+    result['z_m'] += distance * dz
+    return result
+
+
+def motion_times(c):
+    """Generate deadlines using integer centiseconds; include an exact final endpoint."""
+    interval = round(c['correction_interval_s'] * 100)
+    end = round(c['motion_duration_s'] * 100)
+    for tick in range(interval, end, interval):
+        yield tick / 100
+    yield end / 100
+
+
+def teleport(name, state, *, destination):
     # CDK velocity accepts km/h here. Dividing by 3.6 made 1500 become 417 in game.
+    # The destination must be a fixed area, never the moving unit itself.
+    if destination == name:
+        raise ValueError('Self-teleport cannot enforce prescribed motion')
     return f'''      unitMoveTo{{
         object:t="{name}"
-        target:t="{name + '_start' if initial else name}"
+        target:t="{destination}"
         target_type:t="any"
         move_type:t="teleport"
         teleportHeightType:t="absolute"
@@ -185,6 +218,7 @@ def trigger(name, actions, interval=None, *, enabled=True, after=None, condition
 
 def mission(c):
     initial = []
+    motion_areas = []
     delay = c['setup_delay_s']
     for name in ("launcher", "target"):
         state = c[name]
@@ -198,7 +232,7 @@ def mission(c):
         aiGunnersEnabled:b=no
         attack_type:t="hold_fire"
       }}''')
-        initial.append(teleport(name, state, initial=True))
+        initial.append(teleport(name, state, destination=name + '_start'))
     target_move = f'''      unitMoveTo{{
         object:t="target"
         target:t="target_heading"
@@ -221,22 +255,33 @@ def mission(c):
         # Hold starting positions while the simulation/radar continue running.
         # Retain configured velocities for Doppler calculations. This is a
         # positional correction every .02 s, not a global physics pause.
-        triggers.append(trigger("setup_hold", '\n'.join(teleport(name, c[name], initial=True) for name in ('launcher', 'target')), 0.02))
+        triggers.append(trigger("setup_hold", '\n'.join(teleport(name, c[name], destination=name + '_start') for name in ('launcher', 'target')), 0.02))
         for elapsed in range(1, delay):
             triggers.append(trigger(f"setup_count_{elapsed}", f'      playHint{{ name:t="{PREFIX}_count_{delay-elapsed}"; action:t="show"; time:r=1; }}', after=elapsed))
         release = ['      triggerDisable{ target:t="setup_hold"; }']
-        release.extend(teleport(name, c[name], initial=True) for name in ('launcher', 'target'))
+        release.extend(teleport(name, c[name], destination=name + '_start') for name in ('launcher', 'target'))
         release.append(target_move)
-        if c['fixed_motion']:
-            release.append('      triggerEnable{ target:t="correct_motion"; }')
-        else:
+        if not c['fixed_motion']:
             release.append('      playerControls{\n' + ''.join(f'        control:t="{x}"\n' for x in axes) + '        setStatus:t="enable"\n      }')
         if c['release_mode'] == 'salvo':
             release.append('      triggerEnable{ target:t="release_all_missiles"; }')
         release.append(help_hint)
         triggers.append(trigger('start_test', '\n'.join(release), after=delay))
     if c["fixed_motion"]:
-        triggers.append(trigger("correct_motion", '\n'.join(teleport(name, c[name]) for name in ("launcher", "target")), c["correction_interval_s"], enabled=not delay))
+        # Each one-shot deadline is relative to mission start, not to the previous
+        # correction. Scheduled positions never depend on an aircraft's current
+        # (possibly stale) transform or on a nominal periodic callback count.
+        # Keep chronological order so overdue updates end at the newest anchor.
+        for index, elapsed in enumerate(motion_times(c), 1):
+            actions = []
+            for name in ('launcher', 'target'):
+                destination = f'{name}_motion_{index}'
+                motion_areas.append(area(destination, position_at(c[name], elapsed)))
+                actions.append(teleport(name, c[name], destination=destination))
+            if elapsed == c['motion_duration_s']:
+                actions.append('      playerControls{\n' + ''.join(f'        control:t="{x}"\n' for x in axes) + '        setStatus:t="enable"\n      }')
+                actions.append('      playHint{ name:t="wt_missile_lab_motion_end"; action:t="show"; time:r=30; }')
+            triggers.append(trigger(f'motion_sample_{index}', '\n'.join(actions), after=delay + elapsed))
     if c['release_mode'] == 'salvo':
         # The ordinary AAM trigger only released a pair in the user's test.
         # CDK documents unitDropAmmo as firing all rockets. Whether it retains
@@ -251,7 +296,8 @@ def mission(c):
         checkUp:b=no
       }
     '''))
-    return f'''// Generated by missile_lab.py. Grouped launch and fixed motion require in-game validation.
+    return f'''// Generated by missile_lab.py. Prescribed positions use absolute mission-time deadlines.
+// Runtime scheduling, radar continuity and actual displacement still require in-game validation.
 selected_tag:t=""
 bin_dump_file:t=""
 mission_settings{{
@@ -290,6 +336,7 @@ units{{
 }}
 areas{{
 {chr(10).join(area(name + '_start', c[name]) + chr(10) + area(name + '_heading', c[name], 1000000) for name in ('launcher', 'target'))}
+{chr(10).join(motion_areas)}
 }}
 objLayers{{ layer{{ enabled:b=yes; }} }}
 wayPoints{{}}
@@ -400,6 +447,9 @@ advancedMouseAim:b=yes
         f'weapons/{PREFIX}_loadout;"Missile Lab selected missiles"\n'
         f'wt_missile_lab_help;"{help_text}"\n'
         'wt_missile_lab_salvo_sent;"Release-all command sent. Check missile count and guidance; ammunition is consumed. Restart mission to reset."\n')
+    files[f'UserMissions/usr_{PREFIX}.csv'] += (
+        f'wt_missile_lab_motion_end;"Prescribed motion ended after {fmt(c["motion_duration_s"])} s. '
+        'Normal flight resumes; later measurements are outside the controlled test. Restart to repeat."\n')
     files[f'UserMissions/usr_{PREFIX}.csv'] += ''.join(
         f'{PREFIX}_count_{remaining};"RADAR SETUP: {remaining} s - aircraft held at start. Designate the target now."\n'
         for remaining in range(1, c['setup_delay_s'] + 1))
@@ -416,6 +466,19 @@ def build(config, install=False):
     manifest = {'generated_utc': dt.datetime.now(dt.timezone.utc).isoformat(), 'config': c,
                 'files': list(files), 'validation': 'Generated; not yet validated in War Thunder.'}
     (out / 'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+    # A reference trajectory for checking displacement in a fresh replay. These
+    # are commanded positions, never presented as measurements from the game.
+    with (out / 'expected_motion.csv').open('w', newline='', encoding='utf-8-sig') as stream:
+        writer = csv.writer(stream)
+        writer.writerow(['aircraft', 'mission_time_s', 'time_after_setup_s', 'expected_x_m',
+                         'expected_y_m', 'expected_z_m', 'expected_distance_m', 'configured_speed_kmh'])
+        if c['fixed_motion']:
+            for elapsed in [0., *motion_times(c)]:
+                for name in ('launcher', 'target'):
+                    state = position_at(c[name], elapsed)
+                    writer.writerow([name, fmt(c['setup_delay_s'] + elapsed), fmt(elapsed), fmt(state['x_m']),
+                                     fmt(state['altitude_m']), fmt(state['z_m']),
+                                     fmt(state['speed_kmh'] / 3.6 * elapsed), fmt(state['speed_kmh'])])
     if install:
         backup = ROOT / 'backups' / dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f')
         for relative in files:

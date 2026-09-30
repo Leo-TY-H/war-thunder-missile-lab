@@ -51,7 +51,7 @@ Set each aircraft independently. The launcher is the aircraft you control; the t
 | --- | --- |
 | **X / Z position** | Horizontal map coordinates in metres, from −200,000 to +200,000. These are not latitude and longitude. |
 | **Altitude** | Metres above sea level, from 50 to 40,000. |
-| **Speed** | True airspeed in km/h, from 0 to 5,000. Compare against **TAS**, not indicated airspeed (**IAS**). Accepted values do not guarantee stable flight. |
+| **Speed** | Speed in km/h, from 0 to 5,000. Prescribed motion uses this as world distance per elapsed second; with prescribed motion off, the AI receives a TAS command. Check displacement over time as well as the speed display. Accepted values do not guarantee stable flight. |
 | **Heading** | 0° = +X, 90° = +Z, 180° = −X, 270° = −Z. These mission directions may differ from the cockpit compass. |
 | **Aircraft internal ID** | Target identifier, such as `f_16c_block_50`. Use the internal ID, not its display name. |
 
@@ -69,8 +69,9 @@ The list uses internal IDs such as `us_aim_120a` and `cn_pl12a`. Availability de
 
 | Setting | What it does |
 | --- | --- |
-| **Hold both aircraft at the configured speed, altitude and heading** | Repeatedly corrects motion. Flight controls are disabled; radar, weapon and camera controls stay available. Small deviations and tracking disturbances are possible. |
-| **Correction interval** | Time between corrections: 0.02–1 second; default 0.05. A shorter interval does not guarantee greater accuracy. |
+| **Prescribe straight-line motion for both aircraft** | Schedules absolute positions using the configured speed and time elapsed after radar setup. Flight controls are disabled during the test; radar, weapon and camera controls stay available. Discrete teleports are still used, so tracking disturbances and motion between updates need checking. |
+| **Trajectory update interval** | 0.02–1 second in steps of 0.01; default 0.05. Smaller intervals create larger missions and do not guarantee more accurate playback. |
+| **Prescribed motion duration** | 1–600 whole seconds after radar setup; default 120. Maximum 12,000 updates. At the end, a message appears, corrections stop and flight controls return. Later flight is outside the controlled test. |
 | **Radar setup hold** | Holds aircraft near their starting positions for 0–30 whole seconds; default 5. Enter 0 to skip it. The simulation continues running, so this is not an exact pause. |
 | **Make target invulnerable** | Requests an invulnerable target so the first hit does not end the encounter. On by default. |
 | **Ignore projectiles in missile proximity fuses** | Disables proximity detection of missiles and shells while retaining aircraft detection. On by default; this option alone did not resolve the reported detonations. |
@@ -83,7 +84,17 @@ The radar's **150 km** setting is its display scale, not a guaranteed detection 
 
 With motion holding off, flight controls become available when the countdown ends. If radar tracking is unstable, turn motion holding off to check whether corrections are interfering.
 
+The old speed hold repeatedly teleported each aircraft to its own current position. A replay showed only about 5.15 km of movement in 20 seconds at a requested 1500 km/h. It has been replaced by scheduled positions computed from the starting point, heading and absolute elapsed time. This removes dependence on the distance the aircraft happened to travel between updates. **The replacement still needs an in-game displacement check; a correct speed display alone is not validation.**
+
+At 1500 km/h, each aircraft should advance **8,333.33 m in 20 seconds after radar setup**. With the default five-second setup hold, check mission times 5–25 seconds. Head-on aircraft both at that speed close by 16,666.67 m over those 20 seconds. Every build writes **build/expected_motion.csv** with the commanded positions and times for both aircraft; these are reference values, not measured telemetry. Rebuild/install and restart the mission to apply the change; existing replays retain the old movement.
+
 The missile options leave propulsion, drag and in-flight guidance parameters unchanged. They change launch preparation and damage interactions. Turn all three missile override options off to use stock missile definitions.
+
+## Fast travel in replays
+
+Select **Free camera (F)** in the replay. **Hold W and scroll the mouse wheel upward repeatedly** to increase camera travel speed; scroll downward to reduce it for close positioning. This was confirmed in-game for this setup and was fast enough for the requested long-distance travel. An exact speed in km/s has not been measured.
+
+The earlier `debug` overrides `freeCamMoveSpd` and `freeCamTurboSpd` did not deliver the requested replay speed and have been removed from the local game configuration. No mission rebuild or configuration override is needed for mouse-wheel speed adjustment.
 
 ## Troubleshooting
 
@@ -96,9 +107,33 @@ The missile options leave propulsion, drag and in-flight guidance parameters unc
 | **Release all does nothing** | Wait until the countdown ends and check the **Fire rocket salvo** binding. Restart the mission if you already used it. Look for **Release-all command sent**. |
 | **Ammunition disappears, missiles do not guide, or fewer launch** | Release all is unverified for that loadout. Use Individual release to check each missile and its guidance requirements. |
 | **Missiles still detonate near one another** | Enable both isolation options, click **Build & install mission**, and fully restart the game. Isolation remains unverified; successful installation does not prove it works. |
-| **Speed looks wrong** | Compare km/h **TAS** with the setting. IAS can differ. With motion holding off, normal acceleration and deceleration apply. |
+| **Speed looks right but movement is too slow** | Rebuild/install to replace the old self-teleport hold, then restart the mission. Measure displacement after the setup hold and before prescribed motion ends. At 1500 km/h, 20 seconds should cover 8.33 km. The new schedule still requires in-game verification. |
+| **TAS and IAS differ** | IAS can differ from TAS at altitude. With prescribed motion off, normal acceleration and deceleration apply. |
 | **Aircraft still looks like an I-185 / radar did not change with the aircraft ID** | The I-185 body is expected. Choose the radar separately, click **Build & install mission**, and restart the game. |
 | **New settings did not take effect** | Click **Build & install mission**, not just **Save scenario**, and fully restart War Thunder. |
+
+## Export missile measurements from a replay
+
+**Experimental:** the exporter has been checked against one local `.wrpl` replay, version `0x18c1c`, with three simultaneously released radar-guided missiles. It rejects other replay versions. A future game update may require an exporter update.
+
+1. Save your replay in War Thunder. Keep the `scenario.json` used for that test alongside it if you want to identify missiles by loadout slot later.
+2. Double-click **Export Replay Measurements.cmd** and choose the `.wrpl` file. You can also drag a replay onto that command file.
+3. If dependencies are missing, the window prints a command to install them with your detected Python. Run that command once, then reopen the exporter.
+4. Open the output folder printed in the window, inside Missile Lab's **telemetry** folder. Open **missile_samples.csv** in Excel for every missile, **track_1.csv** and the other numbered files for individual tracks, or **missile_summary.csv** for totals.
+
+The export contains recorded **X/Y/Z position, velocity, speed and missile flight time**, plus calculated **Mach, travelled distance and AoA**. Use `speed_kmh` for recorded speed and `flight_time_s` for missile age. Y is altitude; X and Z are horizontal map coordinates, all in metres. The older `speed_estimate_kmh` column remains a smoothed position-based estimate.
+
+**Sensor View coverage is incomplete:** Mach assumes an atmosphere temperature; travelled distance and AoA are reconstructed from recorded samples. Sensor View's **Distance** needs a viewing origin, and **Overload** and the displayed **Seeker** status are not yet decoded reliably. Those unavailable fields stay blank with a reason. See [Reading your missile export](REPLAY_FIELDS.md) for the exact columns, precision limits and optional settings.
+
+Missiles receive numbered track labels by default. To add internal missile names from a saved scenario, open a terminal in the Missile Lab folder and run:
+
+```bat
+"Export Replay Measurements.cmd" "D:\Replays\test.wrpl" --scenario "D:\Replays\test-scenario.json"
+```
+
+Those names come from the supplied scenario and recorded weapon slots; they are not independently recovered from embedded missile names. Use the scenario from that exact test. The export records how each track was identified in **metadata.json** and preserves uninterpreted fields in **raw_samples.json**.
+
+This exporter does not yet measure true target range, exact impact time, miss distance, or the complete Sensor View overload/seeker readouts. A track ending does not prove a hit. Read **READ_ME.txt** and **REPLAY_FIELDS.md** in the output folder for timing and precision limits. Replay exports remain local and are excluded from Git.
 
 ## Save settings and update
 

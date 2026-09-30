@@ -42,7 +42,7 @@ class Configurator(ttk.Frame):
         book.add(weapons, text='  Missiles  ')
         book.add(settings, text='  Motion & setup  ')
         encounter.columnconfigure((0, 1), weight=1)
-        labels = [('x_m', 'X position (m)'), ('z_m', 'Z position (m)'), ('altitude_m', 'Altitude (m ASL)'), ('speed_kmh', 'Speed (km/h TAS)'), ('heading_deg', 'Heading (degrees)')]
+        labels = [('x_m', 'X position (m)'), ('z_m', 'Z position (m)'), ('altitude_m', 'Altitude (m ASL)'), ('speed_kmh', 'Speed (km/h)'), ('heading_deg', 'Heading (degrees)')]
         for column, name in enumerate(('launcher', 'target')):
             frame = ttk.LabelFrame(encounter, text=name.title(), padding=14)
             frame.grid(row=0, column=column, sticky='nsew', padx=(0, 8) if column == 0 else (8, 0))
@@ -91,14 +91,20 @@ class Configurator(ttk.Frame):
         self.isolate_damage = tk.BooleanVar(value=self.config.get('isolate_missile_damage', True))
         self.radar = tk.StringVar(value=self.config.get('radar', 'j16_tws_150'))
         self.interval = tk.StringVar(value=str(self.config['correction_interval_s']))
+        self.motion_duration = tk.StringVar(value=str(self.config.get('motion_duration_s', 120)))
         self.setup_delay = tk.StringVar(value=str(self.config.get('setup_delay_s', 5)))
         self.fm = tk.StringVar(value=self.config['flight_model'])
-        ttk.Checkbutton(settings, text='Hold both aircraft at the configured speed, altitude and heading', variable=self.fixed).pack(anchor='w', pady=6)
-        ttk.Label(settings, text='Uses periodic velocity/orientation corrections; flight controls are disabled.\nCamera, radar and weapon controls stay available. This is an experimental correction loop, not a verified exact physics lock.', wraplength=710, style='Subtitle.TLabel').pack(anchor='w', padx=22, pady=(0, 12))
+        ttk.Checkbutton(settings, text='Prescribe straight-line motion for both aircraft', variable=self.fixed).pack(anchor='w', pady=6)
+        ttk.Label(settings, text='Schedules positions from speed and elapsed time after radar setup. Flight controls are disabled during the test; radar and weapons remain available. Discrete position updates can disturb tracking. Actual movement still needs a replay check.', wraplength=710, style='Subtitle.TLabel').pack(anchor='w', padx=22, pady=(0, 12))
         row = ttk.Frame(settings)
         row.pack(fill='x', pady=8)
-        ttk.Label(row, text='Correction interval (seconds)').pack(side='left')
+        ttk.Label(row, text='Trajectory update interval (seconds)').pack(side='left')
         ttk.Entry(row, textvariable=self.interval, width=12).pack(side='left', padx=16)
+        row = ttk.Frame(settings)
+        row.pack(fill='x', pady=8)
+        ttk.Label(row, text='Prescribed motion duration (seconds after setup)').pack(side='left')
+        ttk.Entry(row, textvariable=self.motion_duration, width=12).pack(side='left', padx=16)
+        ttk.Label(settings, text='Default 120 seconds. When the duration ends, a message appears and normal flight resumes. Restart the mission for another controlled test.', wraplength=710, style='Subtitle.TLabel').pack(anchor='w', padx=22)
         row = ttk.Frame(settings)
         row.pack(fill='x', pady=8)
         ttk.Label(row, text='Radar setup hold (seconds, 0 disables)').pack(side='left')
@@ -143,6 +149,7 @@ class Configurator(ttk.Frame):
         c['setup_delay_s'] = int(self.setup_delay.get())
         c['missiles'] = [v.get().strip() for v in self.missile_vars if v.get().strip()]
         c.update(release_mode=self.release.get(), fixed_motion=self.fixed.get(), immortal_target=self.immortal.get(), zero_warmup=self.warmup.get(), ignore_projectile_fuses=self.ignore_projectiles.get(), isolate_missile_damage=self.isolate_damage.get(), radar=self.radar.get(), correction_interval_s=float(self.interval.get()))
+        c['motion_duration_s'] = float(self.motion_duration.get())
         return validate(c)
 
     def separation(self):

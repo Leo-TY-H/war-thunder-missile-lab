@@ -29,6 +29,7 @@
   "release_mode": "salvo",
   "fixed_motion": true,
   "correction_interval_s": 0.05,
+  "motion_duration_s": 120,
   "immortal_target": true,
   "zero_warmup": true,
   "level": "levels/water.bin",

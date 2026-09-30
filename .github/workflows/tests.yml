@@ -14,4 +14,4 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: python -m unittest -v test_missile_lab
+      - run: python -m unittest -v test_missile_lab test_export_replay

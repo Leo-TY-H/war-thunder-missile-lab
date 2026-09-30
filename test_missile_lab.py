@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from missile_lab import ROOT, direction, generate, load_config, matrix, replace_block
+from missile_lab import ROOT, direction, generate, load_config, matrix, replace_block, position_at, motion_times
 
 
 class MissionTests(unittest.TestCase):
@@ -25,7 +25,7 @@ class MissionTests(unittest.TestCase):
         (game / 'aces.vromfs.bin').touch()
         self.c['game_root'] = str(game)
         self.c.update(zero_warmup=False, ignore_projectile_fuses=False, isolate_missile_damage=False, setup_delay_s=0,
-                      release_mode='grouped', missiles=['us_aim9l_sidewinder', 'us_aim9m_sidewinder'])
+                      motion_duration_s=2, release_mode='grouped', missiles=['us_aim9l_sidewinder', 'us_aim9m_sidewinder'])
 
     def test_cardinal_headings_and_rotation(self):
         for angle, expected in [(0, (1, 0)), (90, (0, 1)), (180, (-1, 0)), (270, (0, -1))]:
@@ -90,6 +90,8 @@ class MissionTests(unittest.TestCase):
         _, files = generate(self.c)
         mission = files['UserMissions/wt_missile_lab.blk']
         self.assertNotIn('correct_motion{', mission)
+        self.assertNotIn('motion_sample_', mission)
+        self.assertNotIn('_motion_1', mission)
         self.assertNotIn('playerControls{', mission)
 
     def test_speed_is_not_divided_by_3_6(self):
@@ -99,8 +101,10 @@ class MissionTests(unittest.TestCase):
         _, files = generate(self.c)
         mission = files['UserMissions/wt_missile_lab.blk']
         # Both initialization and subsequent corrections use the same units.
-        self.assertEqual(mission.count('velocity:r=1500'), 2)
-        self.assertEqual(mission.count('velocity:r=700'), 2)
+        velocities = re.findall(r'velocity:r=([\d.]+)', mission)
+        self.assertEqual(set(velocities), {'1500', '700'})
+        self.assertEqual(velocities.count('1500'), velocities.count('700'))
+        self.assertGreater(velocities.count('1500'), 2)
         self.assertNotIn('velocity:r=416', mission)
         self.assertNotIn('velocity:r=194', mission)
 
@@ -163,7 +167,12 @@ class MissionTests(unittest.TestCase):
         for change in [lambda c: c.update(missiles=[]), lambda c: c.update(missiles=['x']*9),
                        lambda c: c['launcher'].update(speed_kmh=float('nan')),
                        lambda c: c['target'].update(aircraft='../bad'),
-                       lambda c: c.update(correction_interval_s=0)]:
+                       lambda c: c.update(correction_interval_s=0),
+                       lambda c: c.update(correction_interval_s=.025),
+                       lambda c: c.update(motion_duration_s=0),
+                       lambda c: c.update(motion_duration_s=1.5),
+                       lambda c: c.update(motion_duration_s=float('inf')),
+                       lambda c: c.update(motion_duration_s=600, correction_interval_s=.02)]:
             c = copy.deepcopy(self.c)
             change(c)
             with self.assertRaises(ValueError):
@@ -179,13 +188,61 @@ class MissionTests(unittest.TestCase):
             self.assertIn('setup_count_4{', mission)
             self.assertIn('periodicEvent{ time:r=0.02;', mission)
             if fixed:
-                self.assertIn('correct_motion{\n    is_enabled:b=no', mission)
-                self.assertIn('triggerEnable{ target:t="correct_motion";', mission)
+                self.assertNotIn('correct_motion', mission)
+                self.assertIn('timeExpires{ time:r=5.05;', mission)
+                self.assertNotIn('timeExpires{ time:r=0.05;', mission)
             else:
                 self.assertIn('setStatus:t="enable"', mission)
             locale = files['UserMissions/usr_wt_missile_lab.csv']
             for remaining in range(1, 6):
                 self.assertIn(f'RADAR SETUP: {remaining} s', locale)
+
+    def test_prescribed_displacement_regression_1500_kmh(self):
+        self.c['launcher'].update(x_m=0, z_m=0, heading_deg=0, speed_kmh=1500)
+        self.c['target'].update(x_m=30000, z_m=0, heading_deg=180, speed_kmh=1500)
+        self.c.update(setup_delay_s=5, motion_duration_s=20, correction_interval_s=.05)
+        _, files = generate(self.c)
+        mission = files['UserMissions/wt_missile_lab.blk']
+        # Independent inspection of the emitted mission: at mission time 25,
+        # both aircraft have flown 20 s. No self-referential movement targets.
+        block = mission.split('  motion_sample_400{', 1)[1].split('  release_all_missiles{', 1)[0]
+        self.assertIn('timeExpires{ time:r=25;', block)
+        self.assertIn('target:t="launcher_motion_400"', block)
+        self.assertIn('target:t="target_motion_400"', block)
+        positions = {}
+        for name in ('launcher', 'target'):
+            point = mission.split(f'  {name}_motion_400{{', 1)[1].split('objLayer', 1)[0]
+            coords = re.findall(r'\[([^\[\]]+)\]', point)[-1]
+            positions[name] = tuple(float(v) for v in coords.split(','))
+        self.assertAlmostEqual(positions['launcher'][0], 8333.333333, places=4)
+        self.assertAlmostEqual(positions['target'][0], 21666.666667, places=4)
+        self.assertAlmostEqual(positions['target'][0] - positions['launcher'][0], 13333.333334, places=4)
+        self.assertNotIn('target:t="launcher"', mission)
+        self.assertNotIn('target:t="target"', mission)
+        self.assertIn('name:t="wt_missile_lab_motion_end"', block)
+        self.assertIn('setStatus:t="enable"', block)
+
+    def test_trajectory_geometry_and_interval_independence(self):
+        state = dict(x_m=-1234, z_m=987, altitude_m=6500, heading_deg=37, speed_kmh=1500)
+        original = dict(state)
+        result = position_at(state, 20)
+        self.assertAlmostEqual(math.hypot(result['x_m'] - state['x_m'], result['z_m'] - state['z_m']), 8333.333333333)
+        self.assertEqual(result['altitude_m'], 6500)
+        self.assertEqual(state, original)
+        self.assertEqual(position_at(dict(state, speed_kmh=0), 20)['x_m'], state['x_m'])
+        for interval in (.02, .05, .3, 1):
+            self.c.update(correction_interval_s=interval, motion_duration_s=20)
+            times = list(motion_times(self.c))
+            self.assertEqual(times[-1], 20)
+            self.assertTrue(all(a < b for a, b in zip(times, times[1:])))
+            self.assertEqual(len(times), math.ceil(20 / interval))
+            self.assertEqual(position_at(state, times[-1]), result)
+
+    def test_legacy_scenario_gets_bounded_motion_duration(self):
+        self.c.pop('motion_duration_s')
+        self.c['correction_interval_s'] = 1
+        validated, _ = generate(self.c)
+        self.assertEqual(validated['motion_duration_s'], 120)
 
     def test_release_all_is_one_command_on_separate_shortcut(self):
         self.c.update(release_mode='salvo', missiles=['cn_pl12a', 'us_aim_120a', 'su_r_77_1',
